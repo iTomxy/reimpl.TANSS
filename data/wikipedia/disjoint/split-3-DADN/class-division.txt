@@ -1,0 +1,10 @@
+0 art 1
+1 biology 0
+2 geography 1
+3 history 0
+4 literature 1
+5 media 0
+6 music 1
+7 royalty 1
+8 sport 0
+9 warfare 0
