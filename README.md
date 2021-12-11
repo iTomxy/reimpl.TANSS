@@ -1,4 +1,4 @@
-# tmp.TANSS
+# reimpl.TANSS
 
 Re-implementation of TANSS [1] based on SSAH [3,4], with TensorFlow 1.12.
 
