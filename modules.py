@@ -53,22 +53,22 @@ def image_generator(x, is_train, dim_emb, scope_name="ImageGenerator"):
     print("--- image generator ---")
     print("label:", x.shape.as_list())
     with tf.variable_scope(scope_name, reuse=tf.AUTO_REUSE):
-        if args.tanh_G:
-            x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc1",
-                kernel_initializer=tf.initializers.glorot_normal())
-        else:
-            x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc1",
-                kernel_initializer=tf.initializers.he_normal())
+        # if args.tanh_G:
+        #     x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc1",
+        #         kernel_initializer=tf.initializers.glorot_normal())
+        # else:
+        x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc1",
+            kernel_initializer=tf.initializers.he_normal())
         print("fc1:", x.shape.as_list())
         x = tf.layers.dropout(x, 0.1, training=is_train)
-        if args.tanh_G:
-            x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc2",
-                kernel_initializer=tf.initializers.glorot_normal())
-        else:
-            x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc2",
-                kernel_initializer=tf.initializers.he_normal())
+        # if args.tanh_G:
+        #     x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc2",
+        #         kernel_initializer=tf.initializers.glorot_normal())
+        # else:
+        x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc2",
+            kernel_initializer=tf.initializers.he_normal())
         print("fc2:", x.shape.as_list())
-        x = tf.layers.dropout(x, 0.1, training=is_train)
+        x = tf.layers.dropout(x, 0.3, training=is_train)
         emb = tf.layers.dense(x, dim_emb, None, name="emb")
         print("embedding:", emb.shape.as_list())
 
@@ -108,20 +108,20 @@ def text_generator(x, is_train, dim_emb, scope_name="TextGenerator"):
     print("--- text generator ---")
     print("text:", x.shape.as_list())
     with tf.variable_scope(scope_name, reuse=tf.AUTO_REUSE):
-        if args.tanh_G:
-            x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc1",
-                kernel_initializer=tf.initializers.glorot_normal())
-        else:
-            x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc1",
-                kernel_initializer=tf.initializers.he_normal())
+        # if args.tanh_G:
+        #     x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc1",
+        #         kernel_initializer=tf.initializers.glorot_normal())
+        # else:
+        x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc1",
+            kernel_initializer=tf.initializers.he_normal())
         print("fc1:", x.shape.as_list())
         x = tf.layers.dropout(x, 0.3, training=is_train)
-        if args.tanh_G:
-            x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc2",
-                kernel_initializer=tf.initializers.glorot_normal())
-        else:
-            x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc2",
-                kernel_initializer=tf.initializers.he_normal())
+        # if args.tanh_G:
+        #     x = tf.layers.dense(x, 4096, tf.math.tanh, name="fc2",
+        #         kernel_initializer=tf.initializers.glorot_normal())
+        # else:
+        x = tf.layers.dense(x, 4096, tf.nn.leaky_relu, name="fc2",
+            kernel_initializer=tf.initializers.he_normal())
         print("fc2:", x.shape.as_list())
         x = tf.layers.dropout(x, 0.3, training=is_train)
         emb = tf.layers.dense(x, dim_emb, None, name="emb")

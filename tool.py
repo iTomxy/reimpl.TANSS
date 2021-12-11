@@ -2,19 +2,35 @@ import os
 import time
 import math
 import csv
+import itertools
 
 
 def timestamp():
     """time-stamp string: Y-M-D-h-m"""
     t = time.localtime(time.time())
+    # return time.strftime("%Y-%m-%d-%H-%M", t)
     return "{}-{}-{}-{}-{}".format(
         t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min)
+
+
+def enum_product(*args):
+    """enumerate the product of several arrays with corresponding indices
+    usage:
+    - `for (i1, i2), (v1, v2) in enum_product(array1, array2):`
+    ref:
+    - https://stackoverflow.com/questions/56430745/enumerating-a-tuple-of-indices-with-itertools-product
+    """
+    for _index, _data in zip(
+        itertools.product(*(range(len(x)) for x in args)),
+        itertools.product(*args)
+    ):
+        yield _index, _data
 
 
 class Logger:
     """log info in stdout & log file"""
 
-    def __init__(self, log_path, file_name=None):
+    def __init__(self, log_path='.', file_name=None):
         self.log_path = log_path
         self.file_name = file_name
         self.log_file = None
@@ -24,6 +40,7 @@ class Logger:
             self.log_file.write("end time: {}\n".format(time.asctime()))
             self.log_file.flush()
             self.log_file.close()
+            # self.log_file = None
 
     def __call__(self, text, on_screen=True):
         if self.log_file is None:
@@ -38,9 +55,13 @@ class Logger:
         if self.file_name is None:
             self.file_name = "log.{}.txt".format(timestamp())
         log_file_path = os.path.join(self.log_path, self.file_name)
-        self.log_file = open(log_file_path, "a")
+        self.log_file = open(log_file_path, "w")
         assert self.log_file is not None
         self.log_file.write("begin time: {}\n".format(time.asctime()))
+
+    def flush(self):
+        if self.log_file:
+            self.log_file.flush()
 
 
 class Record:
@@ -127,9 +148,9 @@ class MeanValue:
         self.var += value * value
         self.n += n
 
-        if self.n == 0:
+        if 0 == self.n:
             self.mean, self.std = math.nan, math.nan
-        elif self.n == 1:
+        elif 1 == self.n:
             self.mean, self.std = self.sum, math.inf
             self.mean_old = self.mean
             self.m_s = 0.0

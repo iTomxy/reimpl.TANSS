@@ -5,39 +5,52 @@ import scipy.io as sio
 # from sklearn import preprocessing
 
 
-"""data reading in iTom's style
-ref:
-- https://gitee.com/tyloeng/tmp.DADN/blob/master/itom/xmedianet.py#L98
-- https://gitee.com/tyloeng/test.zsr/blob/master/single-dataset/divide.xmedianet.py
-"""
-
-
-class Wikipedia:
-    def __init__(self, data_path, split_id, tune_mode=0):
-        # self.images = np.load(osp.join(
-        #     data_path, "images.vgg16.npy")).astype(np.float32)  # [n, 4096]
+class PascalSentences:
+    def __init__(self, data_path, tune_mode=0):
         self.images = sio.loadmat(osp.join(
-            data_path, "images.vgg19.mat"))["images"].astype(np.float32)  # [n, 4096]
+            data_path, "images.pascal-sentences.vgg19.4096d.mat"))["images"].astype(np.float32)  # [n, 4096]
         self.texts = sio.loadmat(osp.join(
-            data_path, "texts.wiki.doc2vec.300.mat"))["texts"].astype(np.float32)  # [n, 300]
+            data_path, "texts.pascal-sentences.doc2vec.300.mat"))["texts"].astype(np.float32)  # [n, 300]
         self.labels = sio.loadmat(osp.join(
-            data_path, "labels.wiki.mat"))["labels"][0].astype(np.int32)  # [n]
+            data_path, "labels.pascal-sentences.mat"))["labels"][0].astype(np.int32)  # [n]
         self.class_emb = sio.loadmat(osp.join(
-            data_path, "class_emb.wikipedia.Gnews-300d.mat"))["class_emb"].astype(np.float32)  # [c, 300]
+            data_path, "class_emb.pascal-sentences.Gnews-300d.mat"))["class_emb"].astype(np.float32)  # [c, 300]
+
+        N_CLASS = len(np.unique(self.labels))
+        assert 20 == N_CLASS
 
         print("images:", self.images.shape, self.images.min(), self.images.max())
         print("texts:", self.texts.shape, self.texts.min(), self.texts.max())
         print("labels:", self.labels.shape)
         print("class emb:", self.class_emb.shape)
 
-        split_file = osp.join(data_path, "disjoint/split-{0}-DADN/split.wikipedia.{0}.DADN.mat".format(split_id))
-        _data = sio.loadmat(split_file)
-        self.idx_test_u = _data["idx_test_u"][0]
-        # self.idx_train_u = _data["idx_train_u"][0]
-        self.idx_ret_u = _data["idx_ret_u"][0]
-        self.idx_test_s = _data["idx_test_s"][0]
-        self.idx_train_s = _data["idx_train_s"][0]
-        self.idx_ret_s = _data["idx_ret_s"][0]
+        # class S/U division: 10 seen & 10 unseen
+        class_set = np.arange(N_CLASS)
+        seen_classes = np.random.choice(class_set, N_CLASS // 2, replace=False)
+        self.unseen_classes = np.setdiff1d(class_set, seen_classes)
+        seen_mask = np.zeros_like(self.labels, dtype=np.int8)  # belonging to seen classes
+        for c in seen_classes:
+            seen_mask[c == self.labels] = 1
+        seen_mask = (seen_mask > 0)
+
+        # data query/database splitting: 10/40 per class as query/database
+        N_PC, N_Q_PC = 50, 10
+        indices = np.arange(self.labels.shape[0])
+        q_mask = np.zeros_like(self.labels, dtype=np.int8)  # belongging to query set
+        for c in class_set:
+            cls_mask = (c == self.labels)
+            assert cls_mask.sum() == N_PC
+            cls_idx = indices[cls_mask]
+            q_idx = np.random.choice(cls_idx, N_Q_PC, replace=False)
+            q_mask[q_idx] = 1
+        q_mask = (q_mask > 0)
+
+        self.idx_test_u = indices[(~ seen_mask) & q_mask]
+        # self.idx_train_u = indices[(~ seen_mask) & (~ q_mask)]
+        self.idx_ret_u = indices[(~ seen_mask) & (~ q_mask)]
+        self.idx_test_s = indices[seen_mask & q_mask]
+        self.idx_train_s = indices[seen_mask & (~ q_mask)]
+        self.idx_ret_s = self.idx_train_s
 
         if 0 != tune_mode:
             if 1 == tune_mode:

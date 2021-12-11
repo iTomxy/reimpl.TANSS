@@ -1,6 +1,8 @@
+import collections
 import math
 import os
 import os.path as osp
+import shutil
 import random
 import numpy as np
 import scipy.io as sio
@@ -10,6 +12,10 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import tanss
 import wikipedia
+import pascal_sentences
+# import flickr25k
+# import nuswide
+# import coco
 import evaluate
 from wheel import *
 from tool import *
@@ -18,11 +24,7 @@ from args import *
 
 def init_emb_pool(sess, model, dataset):
     emb_pool, cls_emb_pool = [], []
-    if args.mix_mode:
-        _idx_train = dataset.idx_train
-    else:
-        _idx_train = dataset.idx_train_s
-    loader = dataset.iter_set(_idx_train,
+    loader = dataset.iter_set(dataset.idx_train_s,
         index=False, label=False, image=False, text=False)
     for cls_emb_batch in loader:
         # _emb, _cls_emb = sess.run([model.emb_lb, model.reg_cls_emb_lb],
@@ -60,76 +62,51 @@ def gen_feature(sess, model, dataset, indices):
 
 def test(sess, model, dataset):
     res = {}
-    if args.mix_mode:
-        ql, qi, qt = gen_feature(sess, model, dataset, dataset.idx_test)
-        rl, ri, rt = gen_feature(sess, model, dataset, dataset.idx_ret)
+    qls, qis, qts = gen_feature(sess, model, dataset, dataset.idx_test_s)
+    qlu, qiu, qtu = gen_feature(sess, model, dataset, dataset.idx_test_u)
+    rls, ris, rts = gen_feature(sess, model, dataset, dataset.idx_ret_s)
+    rlu, riu, rtu = gen_feature(sess, model, dataset, dataset.idx_ret_u)
 
-        if args.sparse_label:
-            Rel = S = evaluate.sim_mat(ql, rl, True)
-        else:
-            Rel = ql.dot(rl.T).astype(np.int32)
-            S = (Rel > 0).astype(np.int32)
+    D_i2t_s = 1 - evaluate.cos(qis, rts)
+    D_t2i_s = 1 - evaluate.cos(qts, ris)
+    D_i2t_u = 1 - evaluate.cos(qiu, rtu)
+    D_t2i_u = 1 - evaluate.cos(qtu, riu)
 
-        D_i2t = evaluate.euclidean(qi, rt)
-        D_t2i = evaluate.euclidean(qt, ri)
-
-        for _metr, _eval_fn, _sim_mat in zip(model.metric_list,
-                [evaluate.mAP, evaluate.nDCG], [S, Rel]):
-            res[_metr+"_i2t"] = _eval_fn(D_i2t, _sim_mat, args.mAP_at)
-            res[_metr+"_t2i"] = _eval_fn(D_t2i, _sim_mat, args.mAP_at)
-
-        data = {
-            "ql": ql, "qi": qi, "qt": qt,
-            "rl": rl, "ri": ri, "rt": rt,
-        }
+    if args.sparse_label:
+        Rel_s = S_s = evaluate.sim_mat(qls, rls, True)
+        Rel_u = S_u = evaluate.sim_mat(qlu, rlu, True)
     else:
-        qls, qis, qts = gen_feature(sess, model, dataset, dataset.idx_test_s)
-        qlu, qiu, qtu = gen_feature(sess, model, dataset, dataset.idx_test_u)
-        rls, ris, rts = gen_feature(sess, model, dataset, dataset.idx_ret_s)
-        rlu, riu, rtu = gen_feature(sess, model, dataset, dataset.idx_ret_u)
+        Rel_s = qls.dot(rls.T)
+        Rel_u = qlu.dot(rlu.T)
+        S_s = (Rel_s > 0).astype(np.int32)
+        S_u = (Rel_u > 0).astype(np.int32)
 
-        D_i2t_s = 1 - evaluate.cos(qis, rts)
-        D_t2i_s = 1 - evaluate.cos(qts, ris)
-        D_i2t_u = 1 - evaluate.cos(qiu, rtu)
-        D_t2i_u = 1 - evaluate.cos(qtu, riu)
+    # for _metr, _eval_fn, _S_s, _S_u in zip(
+    #         model.metric_list, [evaluate.mAP, evaluate.nDCG], [S_s, Rel_s], [S_u, Rel_u]):
+    for _metr, _eval_fn, _S_s, _S_u in zip(
+            model.metric_list, [evaluate.mAP], [S_s], [S_u]):
+        _i2t_s = _eval_fn(D_i2t_s, _S_s, args.mAP_at)
+        _t2i_s = _eval_fn(D_t2i_s, _S_s, args.mAP_at)
+        _i2t_u = _eval_fn(D_i2t_u, _S_u, args.mAP_at)
+        _t2i_u = _eval_fn(D_t2i_u, _S_u, args.mAP_at)
 
-        if args.sparse_label:
-            Rel_s = S_s = evaluate.sim_mat(qls, rls, True)
-            Rel_u = S_u = evaluate.sim_mat(qlu, rlu, True)
-        else:
-            Rel_s = qls.dot(rls.T)
-            Rel_u = qlu.dot(rlu.T)
-            S_s = (Rel_s > 0).astype(np.int32)
-            S_u = (Rel_u > 0).astype(np.int32)
+        res[_metr+"_s_i2t"] = _i2t_s
+        res[_metr+"_s_t2i"] = _t2i_s
+        res[_metr+"_u_i2t"] = _i2t_u
+        res[_metr+"_u_t2i"] = _t2i_u
 
-        for _metr, _eval_fn, _S_s, _S_u in zip(
-                model.metric_list, [evaluate.mAP, evaluate.nDCG], [S_s, Rel_s], [S_u, Rel_u]):
-            _i2t_s = _eval_fn(D_i2t_s, _S_s, args.mAP_at)
-            _t2i_s = _eval_fn(D_t2i_s, _S_s, args.mAP_at)
-            _i2t_u = _eval_fn(D_i2t_u, _S_u, args.mAP_at)
-            _t2i_u = _eval_fn(D_t2i_u, _S_u, args.mAP_at)
-
-            res[_metr+"_s_i2t"] = _i2t_s
-            res[_metr+"_s_t2i"] = _t2i_s
-            res[_metr+"_u_i2t"] = _i2t_u
-            res[_metr+"_u_t2i"] = _t2i_u
-
-        data =  {
-            "qis": qis, "qts": qts, "qls": qls,
-            "qiu": qiu, "qtu": qtu, "qlu": qlu,
-            "ris": ris, "rts": rts, "rls": rls,
-            "riu": riu, "rtu": rtu, "rlu": rlu,
-        }
+    data =  {
+        "qis": qis, "qts": qts, "qls": qls,
+        "qiu": qiu, "qtu": qtu, "qlu": qlu,
+        "ris": ris, "rts": rts, "rls": rls,
+        "riu": riu, "rtu": rtu, "rlu": rlu,
+    }
 
     return data, res
 
 
 def train_lab_net(sess, model, writer, dataset, var):
-    if args.mix_mode:
-        _idx_train = dataset.idx_train
-    else:
-        _idx_train = dataset.idx_train_s
-    loader = dataset.iter_set(_idx_train, args.batch_size,
+    loader = dataset.iter_set(dataset.idx_train_s, args.batch_size,
             shuffle=True, image=False, text=False)
     # L_train = dataset.load_set(_idx_train,
     #         index=False, image=False, text=False, class_emb=False)
@@ -174,11 +151,7 @@ def train_lab_net(sess, model, writer, dataset, var):
 
 
 def train_dis_net(sess, model, writer, dataset, var):
-    if args.mix_mode:
-        _idx_train = dataset.idx_train
-    else:
-        _idx_train = dataset.idx_train_s
-    loader = dataset.iter_set(_idx_train, args.batch_size,
+    loader = dataset.iter_set(dataset.idx_train_s, args.batch_size,
             shuffle=True, index=False, label=False)
     avg_loss = MeanValue()
     for image, text, cls_emb in loader:
@@ -209,11 +182,7 @@ def train_dis_net(sess, model, writer, dataset, var):
 
 
 def train_img_net(sess, model, writer, dataset, var):
-    if args.mix_mode:
-        _idx_train = dataset.idx_train
-    else:
-        _idx_train = dataset.idx_train_s
-    loader = dataset.iter_set(_idx_train, args.batch_size,
+    loader = dataset.iter_set(dataset.idx_train_s, args.batch_size,
             shuffle=True, text=False, class_emb=False)
     # L_train = dataset.load_set(_idx_train,
     #         index=False, image=False, text=False, class_emb=False)
@@ -255,11 +224,7 @@ def train_img_net(sess, model, writer, dataset, var):
 
 
 def train_txt_net(sess, model, writer, dataset, var):
-    if args.mix_mode:
-        _idx_train = dataset.idx_train
-    else:
-        _idx_train = dataset.idx_train_s
-    loader = dataset.iter_set(_idx_train, args.batch_size,
+    loader = dataset.iter_set(dataset.idx_train_s, args.batch_size,
             shuffle=True, image=False, class_emb=False)
     # L_train = dataset.load_set(_idx_train,
     #         index=False, image=False, text=False, class_emb=False)
@@ -303,11 +268,7 @@ def train_txt_net(sess, model, writer, dataset, var):
 def main(sess, model, writer, saver, dataset, logger):
     var = {}
     var['emb_lb'], var["cls_emb_lb"] = init_emb_pool(sess, model, dataset)
-    if args.mix_mode:
-        _idx_train = dataset.idx_train
-    else:
-        _idx_train = dataset.idx_train_s
-    L_train = dataset.load_set(_idx_train,
+    L_train = dataset.load_set(dataset.idx_train_s,
         index=False, image=False, text=False, class_emb=False)
     var["L_train"] = L_train
     var["S_bin"] = evaluate.sim_mat(L_train, sparse=args.sparse_label)
@@ -317,39 +278,37 @@ def main(sess, model, writer, saver, dataset, logger):
     for epoch in range(args.epoch):
         logger("--- {} ---".format(epoch))
 
-        if epoch % 1 == 0:
-            print('- label net -')
-            for idx in range(2):
-                # _lr_lab_Up = lr_lab[epoch:]
-                # var["lr_lb"] = _lr_lab_Up[idx]
-                for train_labNet_k in range(k_lab_net // (idx + 1)):
-                    _loss = train_lab_net(sess, model, writer, dataset, var)
-                    if _loss is None:  # NaN
-                        logger("NaN: label net: {} epoch, {} sub-epoch".format(epoch, train_labNet_k))
-                        exit(1)
-                    # model.record['loss_lb'].append(_loss)
-                    logger('...epoch:\t{}, loss_labNet: {}'.format(epoch, _loss))
-                    if (train_labNet_k > 1) and (model.record['loss_lb'][-1] >= model.record['loss_lb'][-2]):
-                        break
-                #     break  # train_labNet_k
-                # break  # idx
+        print('- label net -')
+        for idx in range(2):
+            # _lr_lab_Up = lr_lab[epoch:]
+            # var["lr_lb"] = _lr_lab_Up[idx]
+            for train_labNet_k in range(k_lab_net // (idx + 1)):
+                _loss = train_lab_net(sess, model, writer, dataset, var)
+                if _loss is None:  # NaN
+                    logger("NaN: label net: {} epoch, {} sub-epoch".format(epoch, train_labNet_k))
+                    exit(1)
+                # model.record['loss_lb'].append(_loss)
+                logger('...epoch:\t{}, loss_labNet: {}'.format(epoch, _loss))
+                if (train_labNet_k > 1) and (model.record['loss_lb'][-1] >= model.record['loss_lb'][-2]):
+                    break
+                # break  # train_labNet_k
+            # break  # idx
 
-        if epoch % 1 == 0:
-            print('- discriminator -')
-            for idx in range(2):
-                # _lr_dis_Up = lr_dis[epoch:]
-                # var["lr_adv"] = _lr_dis_Up[idx]
-                for train_disNet_k in range(k_dis_net):
-                    _loss = train_dis_net(sess, model, writer, dataset, var)
-                    if _loss is None:  # NaN
-                        logger("NaN: discriminator: {} epoch, {} sub-epoch".format(epoch, train_disNet_k ))
-                        exit(1)
-                    # model.record['loss_adv'].append(_loss)
-                    logger('..epoch:\t{}, loss_adv: {}'.format(epoch, _loss))
-                    if (train_disNet_k > 1) and (model.record['loss_adv'][-1] <= model.record['loss_adv'][-2]):  # LESS-equal
-                        break
-                #     break  # train_disNet_k
-                # break  # idx
+        print('- discriminator -')
+        for idx in range(2):
+            # _lr_dis_Up = lr_dis[epoch:]
+            # var["lr_adv"] = _lr_dis_Up[idx]
+            for train_disNet_k in range(k_dis_net):
+                _loss = train_dis_net(sess, model, writer, dataset, var)
+                if _loss is None:  # NaN
+                    logger("NaN: discriminator: {} epoch, {} sub-epoch".format(epoch, train_disNet_k ))
+                    exit(1)
+                # model.record['loss_adv'].append(_loss)
+                logger('..epoch:\t{}, loss_adv: {}'.format(epoch, _loss))
+                if (train_disNet_k > 1) and (model.record['loss_adv'][-1] <= model.record['loss_adv'][-2]):  # LESS-equal
+                    break
+                # break  # train_disNet_k
+            # break  # idx
 
         print('- image net -')
         for idx in range(3):
@@ -365,7 +324,7 @@ def main(sess, model, writer, saver, dataset, logger):
                     logger('...epoch:\t{}, loss_imgNet: {}'.format(epoch, _loss))
                 if (train_imgNet_k > 2) and (model.record['loss_im'][-1] >= model.record['loss_im'][-2]):
                     break
-            #     break  # train_imgNet_k
+                # break  # train_imgNet_k
             # break  # idx
 
         print('- text net -')
@@ -382,46 +341,22 @@ def main(sess, model, writer, saver, dataset, logger):
                     logger('...epoch:\t{}, Loss_txtNet: {}'.format(epoch, _loss))
                 if train_txtNet_k > 2 and (model.record['loss_tx'][-1] >= model.record['loss_tx'][-2]):
                     break
-            #     break  # train_txtNet_k
+                # break  # train_txtNet_k
             # break  # idx
 
-        if args.tune:
-            logger("- test -")
+        if epoch % args.test_per == 0:
+            print("- test -")
             _data, _res = test(sess, model, dataset)
             for k in _res.keys():
                 model.record[k].append(_res[k])
 
-            _to_save = False
-            _main_metr = "nDCG" if args.multi_label else "mAP"
-            if args.mix_mode:
-                for _metr in model.metric_list:
-                    _i2t, _t2i = _res[_metr+"_i2t"], _res[_metr+"_t2i"]
-                    logger("{}: epoch {}, i->t: {:.4f}, t->i: {:.4f}".format(
-                        _metr, epoch, _i2t, _t2i))
+            for _metr in model.metric_list:
+                for _su in "su":
+                    _i2t, _t2i = _res[_metr+"_"+_su+"_i2t"], _res[_metr+"_"+_su+"_t2i"]
+                    logger("{}_{}: epoch {}, i->t: {:.4f}, t->i: {:.4f}".format(
+                        _metr, _su, epoch, _i2t, _t2i))
 
-                    if (_i2t + _t2i) > (model.best[_metr][1] + model.best[_metr][2]):
-                        model.best[_metr][0] = epoch
-                        model.best[_metr][1] = _i2t
-                        model.best[_metr][2] = _t2i
-                        if _metr == _main_metr:
-                            _to_save = True
-            else:  # disjoint
-                for _metr in model.metric_list:
-                    for _su in "su":
-                        _i2t, _t2i = _res[_metr+"_"+_su+"_i2t"], _res[_metr+"_"+_su+"_t2i"]
-                        logger("{}_{}: epoch {}, i->t: {:.4f}, t->i: {:.4f}".format(
-                            _metr, _su, epoch, _i2t, _t2i))
-
-                        _key = "{}_{}".format(_metr, _su)
-                        if (_i2t + _t2i) > (model.best[_key][1] + model.best[_key][2]):
-                            model.best[_key][0] = epoch
-                            model.best[_key][1] = _i2t
-                            model.best[_key][2] = _t2i
-                            if _metr == _main_metr:
-                                _to_save = True
-
-            if (not args.donot_save_model) and _to_save:
-                saver.save(sess, osp.join(args.log_path, "TANSS"), global_step=epoch)
+            logger.flush()
 
         # break  # epoch
 
@@ -431,100 +366,18 @@ def main(sess, model, writer, saver, dataset, logger):
     _data, _res = test(sess, model, dataset)
     for _metr in model.metric_list:
         for _dir in ["i2t", "t2i"]:
-            if args.mix_mode:
-                _key = "{}_{}".format(_metr, _dir)
+            for _su in "su":
+                _key = "{}_{}_{}".format(_metr, _su, _dir)
                 model.record[_key].append(_res[_key])
                 logger("{}: {:.4f}".format(_key, _res[_key]))
-            else:  # disjoint
-                for _su in "su":
-                    _key = "{}_{}_{}".format(_metr, _su, _dir)
-                    model.record[_key].append(_res[_key])
-                    logger("{}: {:.4f}".format(_key, _res[_key]))
 
-    _main_metr = "nDCG" if args.multi_label else "mAP"
-    if args.mix_mode:
-        _i2t, _t2i = _res[_main_metr+"_i2t"], _res[_main_metr+"_t2i"]
-        _info_str = "{:.4f}it_{:.4f}ti".format(_i2t, _t2i)
-    else:  # disjoint
-        _i2t_s, _t2i_s = _res[_main_metr+"_s_i2t"], _res[_main_metr+"_s_t2i"]
-        _i2t_u, _t2i_u = _res[_main_metr+"_u_i2t"], _res[_main_metr+"_u_t2i"]
-        _info_str = "{:.4f}itu_{:.4f}tiu_{:.4f}its_{:.4f}tis".format(
-            _i2t_u, _t2i_u, _i2t_s, _t2i_s)
-    _f_name = osp.join(args.log_path, "tanss_{}.mat".format(_info_str))
-    sio.savemat(_f_name, _data)
-
-    print("- draw loss -")
-    for k in model.record:
-        if "loss_" not in k:
-            continue
-        fig = plt.figure()
-        plt.plot(model.record[k])
-        plt.title(k)
-        fig.savefig(osp.join(args.log_path, "{}.png".format(k)))
-        plt.close(fig)
-
-    if args.tune:
-        logger("--- best ---")
-        for _metr in model.metric_list:
-            if args.mix_mode:
-                _e, _i2t, _t2i = model.best[_metr]
-                logger("{}: epoch {}, i2t {:.4f}, t2i {:.4f}".format(
-                    _metr, _e, _i2t, _t2i))
-            else:  # disjoint
-                for _su in "su":
-                    _e, _i2t, _t2i = model.best["{}_{}".format(_metr, _su)]
-                    logger("{}_{}: epoch {}, i2t {:.4f}, t2i {:.4f}".format(
-                        _metr, _su, _e, _i2t, _t2i))
-
-        print("- visual the results -")
-        for _metr in model.metric_list:
-            fig = plt.figure()
-            for _dir in ["i2t", "t2i"]:
-                if args.mix_mode:
-                    _key = "{}_{}".format(_metr, _dir)
-                    plt.plot(model.record[_key], label=_key)
-                else:  # disjoint
-                    for _su in "su":
-                        _key = "{}_{}_{}".format(_metr, _su, _dir)
-                        plt.plot(model.record[_key], label=_key)
-            plt.title(_metr)
-            plt.legend()
-            fig.savefig(osp.join(args.log_path, "{}.png".format(_metr)))
-            plt.close(fig)
+    return _data
 
 
 if "__main__" == __name__:
-    if args.tune:
-        os.environ['PYTHONHASHSEED'] = str(args.seed)
-        os.environ['TF_DETERMINISTIC_OPS'] = '1'
-        os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
-        random.seed(args.seed)
-        np.random.seed(args.seed)
-        tf.random.set_random_seed(args.seed)
-
-    if args.multi_label:
-        assert not args.sparse_label, "multi-label can NOT be sparse"
-    if "wikipedia" == args.dataset:
-        assert args.sparse_label and (not args.multi_label)
-        print("* 2021.7.2: tuning with TEST set to repreduce results now ! fix it later")
-        dataset = wikipedia.Wikipedia(
-            args.data_path, args.split_file, args.mix_mode, args.tune, args.preprocess)
-    else:
-        raise NotImplemented
-    if args.mix_mode:
-        n_train = dataset.idx_train.shape[0]
-    else:
-        n_train = dataset.idx_train_s.shape[0]
-
-    split_mode = "mix" if args.mix_mode else "disjoint"
-    args.log_path = osp.join(args.log_path, args.dataset, split_mode)
-    if args.split_id >= 0:
-        args.log_path = osp.join(args.log_path, str(args.split_id))
-    if args.preprocess:
-        args.log_path = osp.join(args.log_path, "pre-proc")
-    if osp.exists(args.log_path):
-        os.system("rm -rf {}".format(args.log_path))
-
+    args.log_path = osp.join(args.log_path, args.dataset)
+    # if osp.exists(args.log_path):
+    #     shutil.rmtree(args.log_path)
     logger = Logger(args.log_path)
     for k, v in args._get_kwargs():
         logger("{}: {}".format(k, v))
@@ -533,20 +386,100 @@ if "__main__" == __name__:
     elif 2 == args.tune:
         logger("LRY's tuning mode")
 
-    gpu_conf = tf.ConfigProto()
-    gpu_conf.gpu_options.allow_growth = True
-    with tf.Session(config=gpu_conf) as sess:
-        model = tanss.TANSS(n_train)
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        saver = tf.train.Saver()
-        writer = tf.summary.FileWriter(args.log_path)
-        if args.resume_model:
-            ckpt = tf.train.get_checkpoint_state(args.log_path)
-            if ckpt and ckpt.model_checkpoint_path:
-                ckpt_name = osp.basename(ckpt.model_checkpoint_path)
-                saver.restore(sess, osp.join(args.log_path, ckpt_name))
-                logger("* success loading checkpoint: {}".format(ckpt_name))
-            else:
-                logger("* checkpoint loading failed")
-        main(sess, model, writer, saver, dataset, logger)
+    accumulated_metrics = collections.defaultdict(list)
+    for i_run in range(args.n_run):
+        logger("=== run: {} ===".format(i_run))
+        logger("seed: {}".format(args.seed))
+        run_path = osp.join(args.log_path, str(i_run))
+        if osp.exists(run_path):
+            shutil.rmtree(run_path)
+        os.makedirs(run_path)
+
+        if "wikipedia" == args.dataset:
+            assert args.sparse_label and (not args.multi_label)
+            dataset = wikipedia.Wikipedia("data/wikipedia", i_run, args.tune)
+        elif "pascal-sentences" == args.dataset:
+            assert args.sparse_label and (not args.multi_label)
+            dataset = pascal_sentences.PascalSentences("data/pascal-sentences", args.tune)
+        else:
+            raise NotImplemented
+
+        n_train = dataset.idx_train_s.shape[0]
+        args.dim_image = dataset.images.shape[1]
+        args.dim_text = dataset.texts.shape[1]
+        args.n_class = len(np.unique(dataset.labels))
+        args.dim_cls_emb = dataset.class_emb.shape[1]
+
+        # reset seed
+        os.environ['PYTHONHASHSEED'] = str(args.seed)
+        # os.environ['TF_DETERMINISTIC_OPS'] = '1'
+        # os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
+        random.seed(args.seed + 1)
+        np.random.seed(args.seed + 2)
+        tf.random.set_random_seed(args.seed + 3)
+
+        gpu_conf = tf.ConfigProto()
+        gpu_conf.gpu_options.allow_growth = True
+        with tf.Session(config=gpu_conf) as sess:
+            model = tanss.TANSS(n_train)
+            sess.run(tf.global_variables_initializer())
+            sess.run(tf.local_variables_initializer())
+            saver = tf.train.Saver()
+            writer = tf.summary.FileWriter(run_path)
+            if args.resume_model:
+                ckpt = tf.train.get_checkpoint_state(run_path)
+                if ckpt and ckpt.model_checkpoint_path:
+                    ckpt_name = osp.basename(ckpt.model_checkpoint_path)
+                    saver.restore(sess, osp.join(run_path, ckpt_name))
+                    logger("* success loading checkpoint: {}".format(ckpt_name))
+                else:
+                    logger("* checkpoint loading failed")
+
+            _data = main(sess, model, writer, saver, dataset, logger)
+            writer.close()
+
+        sio.savemat(osp.join(run_path, "tanss.mat"), _data)
+        for _metr in model.metric_list:
+            for _su in "su":
+                for _dir in ["i2t", "t2i"]:
+                    _key = "{}_{}_{}".format(_metr, _su, _dir)
+                    _v = model.record[_key][-1]
+                    accumulated_metrics[_key].append(_v)
+
+        print("- draw loss -")
+        for k in model.record:
+            if "loss_" not in k:
+                continue
+            v = model.record[k]
+            if len(v) < 2:
+                continue
+            fig = plt.figure()
+            plt.plot(v)
+            plt.title(k)
+            fig.savefig(osp.join(run_path, "{}.png".format(k)))
+            plt.close(fig)
+
+        print("- visual the results -")
+        for _metr in model.metric_list:
+            if len(model.record[_metr+"_s_i2t"]) < 2:
+                continue
+            fig = plt.figure()
+            for _dir in ["i2t", "t2i"]:
+                for _su in "su":
+                    _key = "{}_{}_{}".format(_metr, _su, _dir)
+                    plt.plot(model.record[_key], label=_key)
+            plt.title(_metr)
+            plt.legend()
+            fig.savefig(osp.join(run_path, "{}.png".format(_metr)))
+            plt.close(fig)
+
+        tf.reset_default_graph()
+        args.seed += 7  # different seed for different run
+        # break  # run
+
+    logger("------- training over -------")
+    for _metr, _v_list in accumulated_metrics.items():
+        _mean = np.mean(_v_list)
+        _std = np.std(_v_list)
+        # logger("{}: {:.4f} {} {:.4f}\n{}".format(_metr, _mean, chr(177), _std, _v_list))
+        logger("{}: {:.4f} +- {:.4f}\n{}".format(_metr, _mean, _std, _v_list))

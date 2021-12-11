@@ -7,28 +7,35 @@ parser.add_argument('--log_path', type=str, default="log")
 # parser.add_argument('--tune', action="store_true", default=False,
 #                     help="add this flag to enable tuning mode")
 parser.add_argument('--tune', type=int, default=0,
+                    choices=[0, 1, 2],
                     help="{0: non-tuning, 1: zero-shot mode, 2: LRY's mode}")
-parser.add_argument('--seed', type=int, default=7)
+parser.add_argument('--n_run', type=int, default=5)
 parser.add_argument('--donot_save_model', action="store_true", default=False)
 parser.add_argument('--resume_model', action="store_true", default=False)
 
-parser.add_argument('--dataset', type=str, default="wikipedia")
-parser.add_argument('--data_path', type=str, default="data/wikipedia")
-parser.add_argument('--mix_mode', action="store_true", default=False)
-parser.add_argument('--split_file', type=str,
-                    default="data/wikipedia/split-0/split.wikipedia.0.mat")
-parser.add_argument('--split_id', type=int, default=-1)
+parser.add_argument('--seed', type=int, default=7)
+
+parser.add_argument('--dataset', type=str, default="wikipedia",
+                    choices=["wikipedia", "pascal-sentences"])
+# parser.add_argument('--data_path', type=str, default="data/wikipedia")
+# parser.add_argument('--mix_mode', action="store_true", default=False)
+# parser.add_argument('--split_file', type=str,
+#                     default="data/wikipedia/split-0/split.wikipedia.0.mat")
+# parser.add_argument('--split_id', type=int, default=-1)
+
 parser.add_argument('--sparse_label', action="store_true", default=False)
 parser.add_argument('--multi_label', action="store_true", default=False)
-parser.add_argument('--dim_image', type=int, default=4096)
-parser.add_argument('--dim_text', type=int, default=300)
-parser.add_argument('--n_class', type=int, default=10)
-parser.add_argument('--dim_cls_emb', type=int, default=300)
 
-parser.add_argument('--preprocess', action="store_true", default=False,
-                    help="add this flag to proprocess the features")
-parser.add_argument('--tanh_G', action="store_true", default=False,
-                    help="add this flag to use tanh for activation in generator")
+# parser.add_argument('--dim_image', type=int, default=4096)
+# parser.add_argument('--dim_text', type=int, default=300)
+# parser.add_argument('--n_class', type=int, default=10)
+# parser.add_argument('--dim_cls_emb', type=int, default=300)
+
+# parser.add_argument('--preprocess', action="store_true", default=False,
+#                     help="add this flag to proprocess the features")
+# parser.add_argument('--tanh_G', action="store_true", default=False,
+#                     help="add this flag to use tanh for activation in generator")
+
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--dim_emb', type=int, default=200, help="`K` in paper")
 parser.add_argument('--alpha', type=float, default=0.01)
@@ -37,7 +44,7 @@ parser.add_argument('--gamma', type=float, default=0.0001)
 
 parser.add_argument('--epoch', type=int, default=16)
 parser.add_argument('--lr', type=float, default=0.0001)
-
+parser.add_argument('--test_per', type=int, default=10)
 parser.add_argument('--mAP_at', type=int, default=-1)
 args = parser.parse_args()
 

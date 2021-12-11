@@ -1,3 +1,4 @@
+import collections
 import os
 import os.path as osp
 import tensorflow as tf
@@ -25,22 +26,8 @@ class TANSS:
         self._add_loss()
         self._add_optim()
 
-        self.metric_list = ["mAP", "nDCG"]
-        self.record, self.best = {}, {}
-        if args.mix_mode:
-            for _metr in self.metric_list:
-                self.best[_metr] = [-1, 0, 0]
-                for _dir in ["i2t", "t2i"]:
-                    self.record["{}_{}".format(_metr, _dir)] = []
-        else:  # disjoint mode
-            for _metr in self.metric_list:
-                for _su in "su":
-                    self.best["{}_{}".format(_metr, _su)] = [-1, 0, 0]
-                    for _dir in ["i2t", "t2i"]:
-                        self.record["{}_{}_{}".format(_metr, _su, _dir)] = []
-
-        for _net in ("lb", "im", "tx", "adv"):
-            self.record["loss_{}".format(_net)] = []
+        self.metric_list = ["mAP"]
+        self.record = collections.defaultdict(list)
 
     def _build_model(self):
         print("build model")
