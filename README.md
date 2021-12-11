@@ -2,7 +2,7 @@
 
 Re-implementation of TANSS [1] based on SSAH [3,4], with TensorFlow 1.12.
 
-Notes that it can NOT reproduce the results on the original paper currently. The best results I can get not is listed in [Current Results](#current-results).
+Notes that it can NOT reproduce the results on the original paper currently. The best results I can get now is listed in [Current Results](#current-results).
 
 # Data
 
